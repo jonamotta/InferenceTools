@@ -10,7 +10,8 @@ ROOT = import_root()
 
 class HHJetsProducer(JetLepMetModule):
     def __init__(self, *args, **kwargs):
-        isUL = kwargs.pop("isUL")
+        extEtaAcc = kwargs.pop("extEtaAcc")
+        self.btag_algo = kwargs.pop("btag_algo")
         super(HHJetsProducer, self).__init__(self, *args, **kwargs)
 
         if "/libToolsTools.so" not in ROOT.gSystem.GetLibraries():
@@ -39,7 +40,7 @@ class HHJetsProducer(JetLepMetModule):
             os.getenv("CMT_CMSSW_BASE"), os.getenv("CMT_CMSSW_VERSION"))
         models = [base_hhbtag + "/models/HHbtag_v1_par_%i" % i for i in range(2)]
 
-        self.HHJets = ROOT.HHJetsInterface(models[0], models[1], self.year, isUL)
+        self.HHJets = ROOT.HHJetsInterface(models[0], models[1], self.year, extEtaAcc)
 
         pass
 
@@ -94,7 +95,7 @@ class HHJetsProducer(JetLepMetModule):
         if len(bjets) < 2:
             return False
 
-        bjets.sort(key=lambda x: x[1].btagDeepFlavB, reverse=True)
+        bjets.sort(key=lambda x: x[1]["btag"+self.btag_algo], reverse=True)
         htt_tlv = dau1_tlv + dau2_tlv
 
         HHbtag_jet_pt_ = ROOT.vector(float)()
@@ -103,7 +104,7 @@ class HHJetsProducer(JetLepMetModule):
         HHbtag_rel_jet_E_pt_ = ROOT.vector(float)()
         HHbtag_jet_htt_deta_ = ROOT.vector(float)()
         HHbtag_jet_htt_dphi_ = ROOT.vector(float)()
-        HHbtag_jet_deepFlavour_ = ROOT.vector(float)()
+        HHbtag_jet_btagOutput_ = ROOT.vector(float)()
 
         for jet in bjets:
             jet_tlv = ROOT.TLorentzVector()
@@ -120,7 +121,7 @@ class HHJetsProducer(JetLepMetModule):
             HHbtag_rel_jet_E_pt_.push_back(jet_tlv.E() / jet_tlv.Pt())
             HHbtag_jet_htt_deta_.push_back(htt_tlv.Eta() - jet_tlv.Eta())
             HHbtag_jet_htt_dphi_.push_back(ROOT.Math.VectorUtil.DeltaPhi(htt_tlv, jet_tlv))
-            HHbtag_jet_deepFlavour_.push_back(jet[1].btagDeepFlavB)
+            HHbtag_jet_btagOutput_.push_back(jet[1]["btag"+self.btag_algo])
 
         HHbtag_htt_met_dphi_ = ROOT.Math.VectorUtil.DeltaPhi(htt_tlv, met_tlv)
         HHbtag_htt_scalar_pt_ = dau1.pt + dau2.pt
@@ -142,7 +143,7 @@ class HHJetsProducer(JetLepMetModule):
 
         HHbtag_scores = self.HHJets.GetScore(HHbtag_jet_pt_, HHbtag_jet_eta_,
             HHbtag_rel_jet_M_pt_, HHbtag_rel_jet_E_pt_, HHbtag_jet_htt_deta_,
-            HHbtag_jet_deepFlavour_, HHbtag_jet_htt_dphi_, HHbtag_year_, HHbtag_channel_,
+            HHbtag_jet_btagOutput_, HHbtag_jet_htt_dphi_, HHbtag_year_, HHbtag_channel_,
             HHbtag_htt_pt_, HHbtag_htt_eta_, HHbtag_htt_met_dphi_,
             HHbtag_rel_met_pt_htt_pt_, HHbtag_htt_scalar_pt_, HHbtag_evt_)
 
@@ -243,7 +244,8 @@ def HHJets(**kwargs):
 
 class HHJetsRDFProducer(JetLepMetSyst):
     def __init__(self, df_filter, *args, **kwargs):
-        isUL = "true" if kwargs.pop("isUL") else "false"
+        extEtaAcc = kwargs.pop("extEtaAcc")
+        self.btag_algo = kwargs.pop("btag_algo")
         super(HHJetsRDFProducer, self).__init__(self, *args, **kwargs)
 
         self.df_filter = df_filter
@@ -277,8 +279,8 @@ class HHJetsRDFProducer(JetLepMetSyst):
             models = [base_hhbtag + "/models/HHbtag_v1_par_%i" % i for i in range(2)]
 
             ROOT.gInterpreter.Declare("""
-                auto HHJets = HHJetsInterface("%s", "%s", %s, %s);
-            """ % (models[0], models[1], int(self.year), isUL))
+                auto HHJets = HHJetsInterface("%s", "%s", %s, %i);
+            """ % (models[0], models[1], int(self.year), extEtaAcc))
 
             ROOT.gInterpreter.Declare("""
                 using Vfloat = const ROOT::RVec<float>&;
@@ -286,7 +288,7 @@ class HHJetsRDFProducer(JetLepMetSyst):
                 output get_hh_jets (
                     unsigned long long int event,
                     Vfloat Jet_pt, Vfloat Jet_eta, Vfloat Jet_phi, Vfloat Jet_mass,
-                    VInt Jet_puId, Vfloat Jet_jetId, Vfloat Jet_btagDeepFlavB,
+                    VInt Jet_puId, Vfloat Jet_jetId, Vfloat Jet_btag%s,
                     Vfloat SubJet_pt, Vfloat SubJet_eta, Vfloat SubJet_phi, Vfloat SubJet_mass,
                     Vfloat FatJet_msoftdrop, VInt FatJet_subJetIdx1, VInt FatJet_subJetIdx2,
                     int pairType, int dau1_index, int dau2_index,
@@ -331,19 +333,19 @@ class HHJetsRDFProducer(JetLepMetSyst):
 
                     return HHJets.GetHHJets(event, pairType,
                         Jet_pt, Jet_eta, Jet_phi, Jet_mass,
-                        Jet_puId, Jet_jetId, Jet_btagDeepFlavB,
+                        Jet_puId, Jet_jetId, Jet_btag%s,
                         SubJet_pt, SubJet_eta, SubJet_phi, SubJet_mass,
                         FatJet_msoftdrop, FatJet_subJetIdx1, FatJet_subJetIdx2,
                         dau1_pt, dau1_eta, dau1_phi, dau1_mass,
                         dau2_pt, dau2_eta, dau2_phi, dau2_mass,
                         met_pt, met_phi);
                 }
-            """)
+            """ % (self.btag_algo, self.btag_algo))
 
     def run(self, df):
         df = df.Define("HHJets", "get_hh_jets(event, "
             "Jet_pt{5}, Jet_eta, Jet_phi, Jet_mass{5}, "
-            "Jet_puId, Jet_jetId, Jet_btagDeepFlavB, "
+            "Jet_puId, Jet_jetId, Jet_btag{6}, "
             "SubJet_pt, SubJet_eta, SubJet_phi, SubJet_mass, "
             "FatJet_msoftdrop, FatJet_subJetIdx1, FatJet_subJetIdx2, "
             "pairType, dau1_index, dau2_index, "
@@ -352,7 +354,7 @@ class HHJetsRDFProducer(JetLepMetSyst):
             "Tau_pt{2}, Tau_eta, Tau_phi, Tau_mass{2}, "
             "MET{4}_pt{3}, MET{4}_phi{3})".format(
                 self.muon_syst, self.electron_syst, self.tau_syst, self.met_syst,
-                self.met_smear_tag, self.jet_syst))
+                self.met_smear_tag, self.jet_syst, self.btag_algo))
 
         df = df.Define("Jet_HHbtag", "HHJets.hhbtag")
         df = df.Define("bjet1_JetIdx", "HHJets.bjet_idx1")
@@ -381,8 +383,8 @@ def HHJetsRDF(**kwargs):
     Lepton and jet systematics (used for pt and mass variables) can be modified using the parameters
     from :ref:`BaseModules_JetLepMetSyst`.
 
-    :param filter: whether to filter out output events if they don't have 2 bjet candidates
-    :type filter: bool
+    :param bpair_filter: whether to bpair_filter out output events if they don't have 2 bjet candidates
+    :type bpair_filter: bool
 
     YAML sintaxis:
 
@@ -394,9 +396,9 @@ def HHJetsRDF(**kwargs):
             parameters:
                 year: self.config.year
                 isMC: self.dataset.process.isMC
-                isUL: self.dataset.has_tag('ul')
-                filter: True
+                extEtaAcc: True/False
+                bpair_filter: True/False
 
     """
-    df_filter = kwargs.pop("filter")
+    df_filter = kwargs.pop("bpair_filter")
     return lambda: HHJetsRDFProducer(df_filter=df_filter, **kwargs)
